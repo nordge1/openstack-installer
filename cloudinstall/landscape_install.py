@@ -18,8 +18,7 @@ import logging
 import os
 
 from cloudinstall.config import Config
-from cloudinstall.multi_install import (MultiInstallNewMaas,
-                                        MultiInstallExistingMaas)
+from cloudinstall.multi_install import MultiInstallExistingMaas
 from cloudinstall import utils
 
 
@@ -48,12 +47,6 @@ class LandscapeInstall:
             self.opts, self.display_controller,
             post_tasks=self.landscape_tasks).run()
 
-    def _do_install_new_maas(self):
-        """ Prepare new maas environment for landscape
-        """
-        MultiInstallNewMaas(self.opts, self.display_controller,
-                            post_tasks=self.landscape_tasks).run()
-
     def _save_lds_creds(self, creds):
         admin_name = creds['admin_name'].value
         admin_email = creds['admin_email'].value
@@ -67,8 +60,8 @@ class LandscapeInstall:
         self.display_controller.ui.hide_widget_on_top()
         self.display_controller.info_message("Running ..")
         if not maas_server:
-            log.debug("No maas credentials entered, doing a new MAAS install")
-            self._do_install_new_maas()
+            log.debug("Required MAAS credentials not found.")
+            return self.run()
         else:
             log.debug("Existing MAAS defined, doing a LDS "
                       "installation with existing MAAS.")
@@ -87,5 +80,6 @@ class LandscapeInstall:
 
 # TODO: do we want this?
 class LandscapeMachineChecker:
+
     def __init__(self, maas):
         pass
