@@ -20,7 +20,7 @@ import sys
 import json
 import time
 from cloudinstall.config import Config
-from cloudinstall.installbase import InstallBase
+from cloudinstall.installbase import ProgressGUI, ProgressTUI
 from cloudinstall import utils
 
 
@@ -31,12 +31,16 @@ class SingleInstallException(Exception):
     pass
 
 
-class SingleInstall(InstallBase):
+class SingleInstall():
 
     def __init__(self, opts, display_controller):
         self.opts = opts
-        super().__init__(display_controller)
         self.config = Config()
+        self.display_controller = display_controller
+        if self.opts.command == 'headless':
+            self.progress = ProgressTUI(self.display_controller, self.config)
+        else:
+            self.progress = ProgressGUI(self.display_controller, self.config)
         self.container_name = 'uoi-bootstrap'
         self.container_path = '/var/lib/lxc'
         self.container_abspath = os.path.join(self.container_path,
@@ -65,7 +69,7 @@ class SingleInstall(InstallBase):
     def create_container_and_wait(self):
         """ Creates container and waits for cloud-init to finish
         """
-        self.start_task("Creating container")
+        self.progress.start_task("Creating container")
         utils.container_create(self.container_name, self.userdata)
         utils.container_start(self.container_name)
         utils.container_wait(self.container_name)
@@ -155,12 +159,12 @@ class SingleInstall(InstallBase):
         utils.container_run(self.container_name, "chmod 600 .ssh/id_rsa*")
 
     def run(self):
-        self.register_tasks([
+        self.progress.register_tasks([
             "Initializing Environment",
             "Creating container",
             "Starting Juju server"])
 
-        self.start_task("Initializing Environment")
+        self.progress.start_task("Initializing Environment")
         self.do_install()
 
     @utils.async
@@ -196,7 +200,7 @@ class SingleInstall(InstallBase):
         # start the party
         cloud_status_bin = ['openstack-status']
         self.display_controller.info_message("Bootstrapping Juju ..")
-        self.start_task("Starting Juju server")
+        self.progress.start_task("Starting Juju server")
         utils.container_run(self.container_name, "juju bootstrap")
         utils.container_run(self.container_name, "juju status")
 

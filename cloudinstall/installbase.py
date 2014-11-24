@@ -25,9 +25,9 @@ from cloudinstall.config import Config
 log = logging.getLogger('cloudinstall.installbase')
 
 
-class InstallBase:
+class ProgressGUI:
 
-    """Parent class of single/multi install classes, provides progress
+    """Composable class for single/multi install classes, provides progress
     updates and task tracking.
 
     To use: register a list of task names using register_tasks:
@@ -45,7 +45,8 @@ class InstallBase:
 
     """
 
-    def __init__(self, display_controller):
+    def __init__(self, display_controller, config):
+        self.config = config
         self.display_controller = display_controller
         cb = self.display_controller.show_exception_message
         utils.register_async_exception_callback(cb)
@@ -135,7 +136,20 @@ class InstallBase:
         self.alarm = self.display_controller.loop.set_alarm_in(0.3, f)
 
 
-class FakeInstall(InstallBase):
+class ProgressTUI(ProgressGUI):
+
+    def start_task(self, taskname):
+        log.debug("TUI: shim start_task {}".format(taskname))
+
+    def stop_current_task(self):
+        log.debug("TUI: shim stop_current_task")
+
+    def register_tasks(self, tasks):
+        log.debug("TUI: shim for register_tasks {}".format(tasks))
+
+
+class FakeInstall(ProgressGUI):
+
     """For testing only, use as a replacement for MultiInstall*"""
 
     def __init__(self, opts, display_controller):

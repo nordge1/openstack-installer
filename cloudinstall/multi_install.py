@@ -27,7 +27,7 @@ from subprocess import check_output
 from tempfile import TemporaryDirectory
 
 from cloudinstall.config import Config
-from cloudinstall.installbase import InstallBase
+from cloudinstall.installbase import ProgressGUI
 from cloudinstall.installstate import InstallState
 from cloudinstall.netutils import (get_ip_addr, get_bcast_addr, get_network,
                                    get_default_gateway, get_netmask,
@@ -66,12 +66,13 @@ options {{
 """
 
 
-class MultiInstall(InstallBase):
+class MultiInstall():
 
     def __init__(self, opts, display_controller, post_tasks=None):
         self.opts = opts
-        super().__init__(display_controller)
         self.config = Config()
+        self.display_controller = display_controller
+        self.progress = ProgressGUI(self.display_controller, self.config)
         self.tempdir = TemporaryDirectory(suffix="cloud-install")
         if post_tasks:
             self.post_tasks = post_tasks
@@ -99,7 +100,7 @@ class MultiInstall(InstallBase):
                     "Unable to set ownership for {}".format(d))
 
     def do_install(self):
-        self.start_task("Starting Juju server")
+        self.progress.start_task("Starting Juju server")
         self.display_controller.current_state = InstallState.RUNNING
 
         maas_creds = self.config.maas_creds
@@ -155,7 +156,7 @@ class MultiInstall(InstallBase):
             log.debug("failure to get initial juju status: '{}'".format(out))
             raise Exception("Problem with juju status poke.")
 
-        self.stop_current_task()
+        self.progress.stop_current_task()
 
         if self.opts.install_only:
             return
@@ -192,8 +193,8 @@ class MultiInstallExistingMaas(MultiInstall):
         self.do_install()
 
     def run(self):
-        self.register_tasks(["Starting Juju server"] +
-                            self.post_tasks)
+        self.progress.register_tasks(["Starting Juju server"] +
+                                     self.post_tasks)
 
         msg = "Waiting for sufficient resources in MAAS"
         self.display_controller.info_message(msg)
@@ -218,14 +219,14 @@ class MultiInstallNewMaas(MultiInstall):
                    'auto-generated')
 
         self.installing_new_maas = True
-        self.register_tasks(["Installing MAAS",
-                             "Configuring MAAS",
-                             "Waiting for MAAS cluster registration",
-                             "Searching for existing DHCP servers",
-                             "Configuring MAAS networks",
-                             "Importing MAAS boot images",
-                             "Starting Juju server"] +
-                            self.post_tasks)
+        self.progress.register_tasks(["Installing MAAS",
+                                      "Configuring MAAS",
+                                      "Waiting for MAAS cluster registration",
+                                      "Searching for existing DHCP servers",
+                                      "Configuring MAAS networks",
+                                      "Importing MAAS boot images",
+                                      "Starting Juju server"] +
+                                     self.post_tasks)
 
         self.prompt_for_interface()
 
@@ -252,7 +253,7 @@ class MultiInstallNewMaas(MultiInstall):
     @utils.async
     def continue_with_interface(self):
         self.display_controller.ui.hide_widget_on_top()
-        self.start_task("Installing MAAS")
+        self.progress.start_task("Installing MAAS")
 
         check_output('mkdir -p /etc/openstack', shell=True)
         check_output(['cp', '/etc/network/interfaces',
@@ -264,7 +265,7 @@ class MultiInstallNewMaas(MultiInstall):
 
         utils.apt_install('openstack-multi')
 
-        self.start_task("Configuring MAAS")
+        self.progress.start_task("Configuring MAAS")
         self.create_superuser()
         self.apikey = self.get_apikey()
 
@@ -278,13 +279,13 @@ class MultiInstallNewMaas(MultiInstall):
             raise MaasInstallError("Unable to set permissions on {}".format(
                 os.path.join(utils.install_home(), '.maascli.db')))
 
-        self.start_task("Waiting for MAAS cluster registration")
+        self.progress.start_task("Waiting for MAAS cluster registration")
         cluster_uuid = self.wait_for_registration()
         self.create_maas_bridge(self.target_iface)
 
         self.prompt_for_bridge()
 
-        self.start_task("Configuring MAAS networks")
+        self.progress.start_task("Configuring MAAS networks")
         self.configure_maas_networking(cluster_uuid,
                                        'br0',
                                        self.gateway,
@@ -306,7 +307,7 @@ class MultiInstallNewMaas(MultiInstall):
                 raise MaasInstallError("Error setting proxy config")
 
         self.display_controller.info_message("Importing MAAS boot images")
-        self.start_task("Importing MAAS boot images")
+        self.progress.start_task("Importing MAAS boot images")
         out = utils.get_command_output('maas maas boot-resources import')
         if out['status'] != 0:
             log.debug("Error starting boot images import: {}".format(out))
@@ -324,7 +325,7 @@ class MultiInstallNewMaas(MultiInstall):
 
         self.display_controller.info_message("Done importing boot images")
 
-        self.stop_current_task()
+        self.progress.stop_current_task()
         msg = "Waiting for sufficient resources in MAAS"
         self.display_controller.info_message(msg)
         self.display_controller.current_installer = self
@@ -381,7 +382,7 @@ class MultiInstallNewMaas(MultiInstall):
 
         self.display_controller.info_message(
             "Detecting Existing DHCP server")
-        self.start_task("Searching for existing DHCP servers")
+        self.progress.start_task("Searching for existing DHCP servers")
         # TODO Handle existing dhcp with another dialog or user interaction
         # to accept the consequences.
         if self.detect_existing_dhcp(self.target_iface):
@@ -699,7 +700,7 @@ class LandscapeInstallFinal:
         self.deploy_landscape()
 
     def deploy_landscape(self):
-        self.multi_installer.start_task("Preparing Landscape")
+        self.multi_installer.progress.start_task("Preparing Landscape")
         self.display_controller.info_message(
             "Running")
         # FIXME: not sure if deployer is failing to access the juju
@@ -719,7 +720,7 @@ class LandscapeInstallFinal:
                    lscape_env_modified)
 
         # Juju deployer
-        self.multi_installer.start_task("Deploying Landscape")
+        self.multi_installer.progress.start_task("Deploying Landscape")
 
         out = utils.get_command_output("juju-deployer -WdvL -w 180 -c {0} "
                                        "landscape-dense-maas".format(
@@ -735,7 +736,8 @@ class LandscapeInstallFinal:
         # /usr/share/openstack/bin/configure-landscape --admin-email adam
         # --admin-name foo@bar.com --system-email foo@bar.com --maas-host
         # 172.16.0.1
-        self.multi_installer.start_task("Registering against Landscape")
+        self.multi_installer.progress.start_task(
+            "Registering against Landscape")
         cmd = ("{bin} --admin-email {admin_email} "
                "--admin-name {name} "
                "--system-email {sys_email} "
@@ -754,7 +756,7 @@ class LandscapeInstallFinal:
             log.error("Problem with configuring Landscape: {}.".format(out))
             raise Exception("Error configuring Landscape.")
 
-        self.multi_installer.stop_current_task()
+        self.multi_installer.progress.stop_current_task()
         self.display_controller.clear_status()
 
         msg = []
